@@ -37,4 +37,7 @@ contextBridge.exposeInMainWorld("toss", {
     ipcRenderer.invoke("read-file-chunk", shareId, offset, length),
 
   verifyPassword: (shareId, pw) => ipcRenderer.invoke("verify-password", shareId, pw),
+
+  getPreferences: () => ipcRenderer.invoke("get-preferences"),
+  setPreferences: (prefs) => ipcRenderer.invoke("set-preferences", prefs),
 });

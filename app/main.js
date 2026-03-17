@@ -6,6 +6,8 @@ const http = require("http");
 const os = require("os");
 const WebSocket = require("ws");
 
+app.setName("Toss");
+
 // Use real IPs instead of mDNS .local hostnames for WebRTC ICE candidates
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
 
@@ -20,6 +22,7 @@ function corsHeaders(extra) {
 // Shared files map: shareId -> { filePath, fileName, fileSize, password? }
 const sharedFiles = new Map();
 const SHARED_FILES_PATH = path.join(app.getPath("userData"), "shared-files.json");
+const PREFERENCES_PATH = path.join(app.getPath("userData"), "preferences.json");
 
 // ICE servers fetched from relay
 let iceServers = [
@@ -206,6 +209,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 480,
     height: 600,
+    icon: path.join(__dirname, "icon.icns"),
     titleBarStyle: "default",
     webPreferences: {
       nodeIntegration: false,
@@ -410,6 +414,27 @@ ipcMain.handle("verify-password", (_event, shareId, candidatePassword) => {
 
 ipcMain.handle("get-ice-servers", () => {
   return iceServers;
+});
+
+ipcMain.handle("get-preferences", () => {
+  try {
+    if (fs.existsSync(PREFERENCES_PATH)) {
+      return JSON.parse(fs.readFileSync(PREFERENCES_PATH, "utf8"));
+    }
+  } catch (_) { /* ignore */ }
+  return { theme: "dark" };
+});
+
+ipcMain.handle("set-preferences", (_event, prefs) => {
+  let current = { theme: "dark" };
+  try {
+    if (fs.existsSync(PREFERENCES_PATH)) {
+      current = JSON.parse(fs.readFileSync(PREFERENCES_PATH, "utf8"));
+    }
+  } catch (_) { /* ignore */ }
+  const merged = Object.assign(current, prefs);
+  fs.writeFileSync(PREFERENCES_PATH, JSON.stringify(merged), "utf8");
+  return merged;
 });
 
 // ---------------------------------------------------------------------------

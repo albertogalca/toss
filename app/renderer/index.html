@@ -9,19 +9,41 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header>
-    <h1>Toss</h1>
-    <div id="connection-indicator">
+  <table id="file-table">
+    <thead>
+      <tr>
+        <th class="col-name">Name<div class="col-resize" data-col="name"></div></th>
+        <th class="col-size">Size<div class="col-resize" data-col="size"></div></th>
+        <th class="col-status">Status<div class="col-resize" data-col="status"></div></th>
+        <th class="col-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="file-list"></tbody>
+  </table>
+
+  <div id="empty-state">Drop files here to share</div>
+
+  <div id="settings-popover">
+    <div class="setting-row">
+      <span class="setting-label">Light mode</span>
+      <label class="toggle">
+        <input type="checkbox" id="theme-toggle" />
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+  </div>
+
+  <div id="bottom-bar">
+    <div id="bottom-left">
+      <button id="settings-btn" title="Settings">&#x2699;</button>
+      <span id="file-count">0 files</span>
+      <span class="hint">Drag files to add</span>
+    </div>
+    <div id="bottom-right">
       <span id="status-dot"></span>
       <span id="status-text">Disconnected</span>
     </div>
-  </header>
-
-  <div id="drop-zone">
-    <p>Drop files here to share</p>
   </div>
-
-  <ul id="file-list"></ul>
 
   <script src="app.js"></script>
 </body>

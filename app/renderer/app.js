@@ -2,10 +2,14 @@
 // DOM references
 // ---------------------------------------------------------------------------
 
-const dropZone = document.getElementById("drop-zone");
 const fileList = document.getElementById("file-list");
 const statusDot = document.getElementById("status-dot");
 const statusText = document.getElementById("status-text");
+const fileCountEl = document.getElementById("file-count");
+const emptyState = document.getElementById("empty-state");
+const settingsBtn = document.getElementById("settings-btn");
+const settingsPopover = document.getElementById("settings-popover");
+const themeToggle = document.getElementById("theme-toggle");
 
 // Active peer connections keyed by a unique session key (shareId + recipient)
 const peerConnections = new Map();
@@ -14,6 +18,7 @@ const peerConnections = new Map();
 const MAX_CONCURRENT = 5;
 const activeTransfers = new Map(); // shareId -> count
 const transferQueue = new Map();   // shareId -> [{ msg }]
+
 
 // ICE servers (fetched from main process)
 let iceServers = [
@@ -27,6 +32,43 @@ let iceServers = [
     if (servers && servers.length > 0) iceServers = servers;
   } catch (_) { /* use defaults */ }
 })();
+
+// ---------------------------------------------------------------------------
+// Column resize
+// ---------------------------------------------------------------------------
+
+const fileTable = document.getElementById("file-table");
+
+document.querySelectorAll(".col-resize").forEach((handle) => {
+  handle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const col = handle.dataset.col;
+    const th = handle.parentElement;
+    const startX = e.clientX;
+    const startWidth = th.offsetWidth;
+    const tableWidth = fileTable.offsetWidth;
+
+    handle.classList.add("dragging");
+    document.body.classList.add("col-resizing");
+
+    const onMouseMove = (ev) => {
+      const diff = ev.clientX - startX;
+      const newPx = Math.max(40, startWidth + diff);
+      const newPct = (newPx / tableWidth) * 100;
+      fileTable.style.setProperty(`--col-${col}`, `${newPct}%`);
+    };
+
+    const onMouseUp = () => {
+      handle.classList.remove("dragging");
+      document.body.classList.remove("col-resizing");
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -51,6 +93,12 @@ function getMimeType(fileName) {
   return map[ext] || "application/octet-stream";
 }
 
+function updateFileCount() {
+  const count = fileList.querySelectorAll("tr.file-row").length;
+  fileCountEl.textContent = `${count} file${count !== 1 ? "s" : ""}`;
+  emptyState.classList.toggle("hidden", count > 0);
+}
+
 // ---------------------------------------------------------------------------
 // Connection status
 // ---------------------------------------------------------------------------
@@ -66,29 +114,24 @@ window.toss.onConnectionStatus((connected) => {
 });
 
 // ---------------------------------------------------------------------------
-// Drag & drop
+// Drag & drop — entire body is the drop target
 // ---------------------------------------------------------------------------
 
-// Prevent default file-open behavior everywhere (Electron navigates to file otherwise)
-document.addEventListener("dragover", (e) => e.preventDefault());
-document.addEventListener("drop", (e) => e.preventDefault());
-
-dropZone.addEventListener("dragover", (e) => {
+document.addEventListener("dragover", (e) => {
   e.preventDefault();
-  e.stopPropagation();
-  dropZone.classList.add("drag-over");
+  document.body.classList.add("drag-over");
 });
 
-dropZone.addEventListener("dragleave", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  dropZone.classList.remove("drag-over");
+document.addEventListener("dragleave", (e) => {
+  // Only remove when leaving the window
+  if (e.relatedTarget === null) {
+    document.body.classList.remove("drag-over");
+  }
 });
 
-dropZone.addEventListener("drop", async (e) => {
+document.addEventListener("drop", async (e) => {
   e.preventDefault();
-  e.stopPropagation();
-  dropZone.classList.remove("drag-over");
+  document.body.classList.remove("drag-over");
 
   for (const file of e.dataTransfer.files) {
     const filePath = window.toss.getPathForFile(file);
@@ -100,88 +143,158 @@ dropZone.addEventListener("drop", async (e) => {
 });
 
 // ---------------------------------------------------------------------------
+// Row selection & keyboard navigation
+// ---------------------------------------------------------------------------
+
+function selectRow(tr) {
+  if (!tr || !tr.classList.contains("file-row")) return;
+  const prev = fileList.querySelector("tr.file-row.selected");
+  if (prev) prev.classList.remove("selected");
+  tr.classList.add("selected");
+  tr.scrollIntoView({ block: "nearest" });
+}
+
+function getSelectedRow() {
+  return fileList.querySelector("tr.file-row.selected");
+}
+
+function getFileRows() {
+  return [...fileList.querySelectorAll("tr.file-row")];
+}
+
+async function removeRow(tr) {
+  const id = tr.id.replace("file-", "");
+  // Select neighbor before removing
+  const rows = getFileRows();
+  const idx = rows.indexOf(tr);
+  const next = rows[idx + 1] || rows[idx - 1];
+
+  await window.toss.removeFile(id);
+  const pwRow = document.getElementById(`pw-row-${id}`);
+  if (pwRow) pwRow.remove();
+  tr.remove();
+
+  updateFileCount();
+
+  if (next) selectRow(next);
+}
+
+document.addEventListener("keydown", (e) => {
+  // Don't intercept when typing in an input
+  if (e.target.tagName === "INPUT") return;
+
+  const selected = getSelectedRow();
+  const rows = getFileRows();
+  if (rows.length === 0) return;
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (!selected) { selectRow(rows[0]); return; }
+    const idx = rows.indexOf(selected);
+    if (idx < rows.length - 1) selectRow(rows[idx + 1]);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!selected) { selectRow(rows[rows.length - 1]); return; }
+    const idx = rows.indexOf(selected);
+    if (idx > 0) selectRow(rows[idx - 1]);
+  } else if ((e.key === "Backspace" || e.key === "Delete") && selected) {
+    e.preventDefault();
+    removeRow(selected);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // File list UI
 // ---------------------------------------------------------------------------
 
 async function addFileToUI({ shareId, fileName, fileSize, hasPassword }) {
   const url = await window.toss.getShareUrl(shareId);
 
-  const li = document.createElement("li");
-  li.className = "file-item";
-  li.id = `file-${shareId}`;
+  const tr = document.createElement("tr");
+  tr.className = "file-row";
+  tr.id = `file-${shareId}`;
 
-  li.innerHTML = `
-    <div class="file-header">
-      <span class="file-name" title="${fileName}">${fileName}</span>
-      <span class="file-size">${humanSize(fileSize)}</span>
-    </div>
-    <div class="file-url" title="${url}">${url}</div>
-    <div class="file-actions">
-      <button class="copy" data-url="${url}">Copy link</button>
-      <button class="password-toggle" data-id="${shareId}">${hasPassword ? "🔒" : "🔓"}</button>
-      <button class="remove" data-id="${shareId}">Remove</button>
-      <span class="file-status" id="status-${shareId}">Ready</span>
-    </div>
-    <div class="progress-bar"><div class="progress-bar-fill" id="progress-${shareId}"></div></div>
+  tr.innerHTML = `
+    <td class="col-name-cell" title="${fileName}">
+      ${fileName}
+      <div class="row-progress"><div class="row-progress-fill" id="progress-${shareId}"></div></div>
+    </td>
+    <td class="col-size-cell">${humanSize(fileSize)}</td>
+    <td class="col-status-cell"><span class="status-text" id="status-${shareId}">Ready</span></td>
+    <td class="col-actions-cell">
+      <button class="copy" data-url="${url}" title="Copy link">&#x27A4;</button>
+      <button class="pw-toggle" data-id="${shareId}" title="Password">${hasPassword ? "&#x1F512;" : "&#x1F513;"}</button>
+      <button class="remove" data-id="${shareId}" title="Remove">&#x2715;</button>
+    </td>
   `;
 
-  li.querySelector(".copy").addEventListener("click", async (e) => {
+  // Click to select row
+  tr.addEventListener("click", () => selectRow(tr));
+
+  // Copy link
+  tr.querySelector(".copy").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     await navigator.clipboard.writeText(btn.dataset.url);
-    btn.textContent = "Copied!";
-    setTimeout(() => { btn.textContent = "Copy link"; }, 1500);
+    const orig = btn.innerHTML;
+    btn.textContent = "\u2713";
+    setTimeout(() => { btn.innerHTML = orig; }, 1500);
   });
 
-  li.querySelector(".password-toggle").addEventListener("click", async (e) => {
+  // Password toggle
+  tr.querySelector(".pw-toggle").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     const id = btn.dataset.id;
     const currentPassword = await window.toss.getFilePassword(id);
 
     if (currentPassword) {
-      // Remove password
       await window.toss.setFilePassword(id, null);
-      btn.textContent = "🔓";
-      // Remove inline input if visible
-      const row = li.querySelector(".password-row");
-      if (row) row.remove();
+      btn.innerHTML = "&#x1F513;";
+      const pwRow = document.getElementById(`pw-row-${id}`);
+      if (pwRow) pwRow.remove();
     } else {
-      // Show inline password input
-      let row = li.querySelector(".password-row");
-      if (row) { row.querySelector("input").focus(); return; }
+      let pwRow = document.getElementById(`pw-row-${id}`);
+      if (pwRow) { pwRow.querySelector("input").focus(); return; }
 
-      row = document.createElement("div");
-      row.className = "password-row";
-      row.innerHTML = `<input type="password" placeholder="Set password" class="pw-input" /><button class="pw-save">Set</button><button class="pw-cancel">Cancel</button>`;
-      li.querySelector(".file-actions").after(row);
+      pwRow = document.createElement("tr");
+      pwRow.className = "password-row-tr";
+      pwRow.id = `pw-row-${id}`;
+      pwRow.innerHTML = `
+        <td colspan="4">
+          <div class="password-inline">
+            <input type="password" placeholder="Set password" />
+            <button class="pw-save">Set</button>
+            <button class="pw-cancel">Cancel</button>
+          </div>
+        </td>
+      `;
+      tr.after(pwRow);
 
-      const input = row.querySelector("input");
+      const input = pwRow.querySelector("input");
       input.focus();
 
       const save = () => {
         const pw = input.value.trim();
         if (pw) {
           window.toss.setFilePassword(id, pw);
-          btn.textContent = "🔒";
+          btn.innerHTML = "&#x1F512;";
         }
-        row.remove();
+        pwRow.remove();
       };
 
-      row.querySelector(".pw-save").addEventListener("click", save);
-      row.querySelector(".pw-cancel").addEventListener("click", () => row.remove());
+      pwRow.querySelector(".pw-save").addEventListener("click", save);
+      pwRow.querySelector(".pw-cancel").addEventListener("click", () => pwRow.remove());
       input.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter") save();
-        if (ev.key === "Escape") row.remove();
+        if (ev.key === "Escape") pwRow.remove();
       });
     }
   });
 
-  li.querySelector(".remove").addEventListener("click", async (e) => {
-    const id = e.currentTarget.dataset.id;
-    await window.toss.removeFile(id);
-    li.remove();
-  });
+  // Remove
+  tr.querySelector(".remove").addEventListener("click", () => removeRow(tr));
 
-  fileList.appendChild(li);
+  fileList.appendChild(tr);
+  updateFileCount();
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +305,10 @@ window.toss.onTransferProgress(({ shareId, sent, total }) => {
   const pct = Math.round((sent / total) * 100);
   const bar = document.getElementById(`progress-${shareId}`);
   const status = document.getElementById(`status-${shareId}`);
-  if (bar) bar.style.width = `${pct}%`;
+  if (bar) {
+    bar.parentElement.classList.add("active");
+    bar.style.width = `${pct}%`;
+  }
   if (status) status.textContent = `${pct}%`;
 });
 
@@ -376,7 +492,10 @@ async function startTransfer(msg) {
       const pct = Math.round((offset / total) * 100);
       const bar = document.getElementById(`progress-${shareId}`);
       const status = document.getElementById(`status-${shareId}`);
-      if (bar) bar.style.width = `${pct}%`;
+      if (bar) {
+        bar.parentElement.classList.add("active");
+        bar.style.width = `${pct}%`;
+      }
       if (status) status.textContent = `${pct}%`;
     }
 
@@ -454,10 +573,37 @@ function updateStatus(shareId, text) {
 }
 
 // ---------------------------------------------------------------------------
-// Init — reload existing files on startup
+// Settings
+// ---------------------------------------------------------------------------
+
+settingsBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  settingsPopover.classList.toggle("open");
+});
+
+document.addEventListener("click", (e) => {
+  if (!settingsPopover.contains(e.target) && e.target !== settingsBtn) {
+    settingsPopover.classList.remove("open");
+  }
+});
+
+themeToggle.addEventListener("change", () => {
+  const theme = themeToggle.checked ? "light" : "dark";
+  document.body.classList.toggle("light", themeToggle.checked);
+  window.toss.setPreferences({ theme });
+});
+
+// ---------------------------------------------------------------------------
+// Init — reload existing files on startup + apply preferences
 // ---------------------------------------------------------------------------
 
 (async () => {
+  const prefs = await window.toss.getPreferences();
+  if (prefs.theme === "light") {
+    document.body.classList.add("light");
+    themeToggle.checked = true;
+  }
+
   const files = await window.toss.getFiles();
   for (const f of files) {
     addFileToUI(f);
