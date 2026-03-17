@@ -145,11 +145,13 @@ function startHttpServer() {
         return;
       }
 
-      // Password check
+      // Password check (timing-safe)
       if (info.password) {
-        const token = url.searchParams.get("token");
+        const token = url.searchParams.get("token") || "";
         const expected = crypto.createHash("sha256").update(info.password).digest("hex");
-        if (token !== expected) {
+        const tokenBuf = Buffer.from(token, "utf8");
+        const expectedBuf = Buffer.from(expected, "utf8");
+        if (tokenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(tokenBuf, expectedBuf)) {
           res.writeHead(403, corsHeaders({ "Content-Type": "application/json" }));
           res.end(JSON.stringify({ error: "invalid token" }));
           return;
@@ -370,6 +372,7 @@ ipcMain.handle("set-file-password", (_event, shareId, password) => {
   if (info) {
     info.password = password || null;
     saveSharedFiles();
+    registerWithRelay(shareId);
   }
 });
 

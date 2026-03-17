@@ -184,7 +184,7 @@
         receivedBytes += event.data.byteLength;
 
         if (useStreaming && fileWriter) {
-          fileWriter.write(new Uint8Array(event.data));
+          fileWriter.write(new Uint8Array(event.data)).catch(function () {});
         } else {
           receivedChunks.push(event.data);
         }
@@ -376,7 +376,7 @@
 
       // Write any chunks already received in memory
       for (var i = 0; i < receivedChunks.length; i++) {
-        fileWriter.write(new Uint8Array(receivedChunks[i]));
+        fileWriter.write(new Uint8Array(receivedChunks[i])).catch(function () {});
       }
       // Free memory
       receivedChunks = [];
@@ -566,7 +566,7 @@
         receivedBytes += chunk.byteLength;
 
         if (useStreaming && fileWriter) {
-          fileWriter.write(chunk);
+          fileWriter.write(chunk).catch(function () {});
         } else {
           receivedChunks.push(chunk.buffer);
         }

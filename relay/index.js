@@ -22,6 +22,8 @@ const SHARE_ID_RE = /^[A-Za-z0-9_-]{10,24}$/;
 const rooms = new Map();
 // ws -> Set<shareId>  (tracks all shareIds registered by a sender)
 const senderShareIds = new Map();
+// ws -> [{shareId, sessionId}]  (tracks rooms a recipient joined, for fast cleanup)
+const recipientRooms = new Map();
 
 // ---------------------------------------------------------------------------
 // Rate limiting — token bucket per IP
@@ -157,7 +159,7 @@ if (TLS_CERT && TLS_KEY) {
 // WebSocket server
 // ---------------------------------------------------------------------------
 
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 
 wss.on("connection", (ws, req) => {
   const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
@@ -252,6 +254,8 @@ wss.on("connection", (ws, req) => {
 
         room.lastActivity = Date.now();
         room.recipients.set(sessionId, ws);
+        if (!recipientRooms.has(ws)) recipientRooms.set(ws, []);
+        recipientRooms.get(ws).push({ shareId, sessionId });
         // Let sender know a recipient connected
         send(room.sender, { type: "recipient-ready", shareId, sessionId });
         // Send file info + HTTP endpoints to recipient
@@ -318,14 +322,17 @@ wss.on("connection", (ws, req) => {
       senderShareIds.delete(ws);
     }
 
-    // If this was a recipient in any room, remove it
-    for (const [shareId, room] of rooms) {
-      for (const [sessionId, recipientWs] of room.recipients) {
-        if (recipientWs === ws) {
+    // If this was a recipient in any room, remove it via reverse map
+    const entries = recipientRooms.get(ws);
+    if (entries) {
+      for (const { shareId, sessionId } of entries) {
+        const room = rooms.get(shareId);
+        if (room) {
           room.recipients.delete(sessionId);
           console.log(`[cleanup] recipient left shareId=${shareId} sessionId=${sessionId}`);
         }
       }
+      recipientRooms.delete(ws);
     }
   });
 });

@@ -207,22 +207,29 @@ document.addEventListener("keydown", (e) => {
 // File list UI
 // ---------------------------------------------------------------------------
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 async function addFileToUI({ shareId, fileName, fileSize, hasPassword }) {
   const url = await window.toss.getShareUrl(shareId);
+  const safeName = escapeHtml(fileName);
 
   const tr = document.createElement("tr");
   tr.className = "file-row";
   tr.id = `file-${shareId}`;
 
   tr.innerHTML = `
-    <td class="col-name-cell" title="${fileName}">
-      ${fileName}
+    <td class="col-name-cell" title="${safeName}">
+      ${safeName}
       <div class="row-progress"><div class="row-progress-fill" id="progress-${shareId}"></div></div>
     </td>
     <td class="col-size-cell">${humanSize(fileSize)}</td>
     <td class="col-status-cell"><span class="status-text" id="status-${shareId}">Ready</span></td>
     <td class="col-actions-cell">
-      <button class="copy" data-url="${url}" title="Copy link">&#x27A4;</button>
+      <button class="copy" data-url="${escapeHtml(url)}" title="Copy link">&#x27A4;</button>
       <button class="pw-toggle" data-id="${shareId}" title="Password">${hasPassword ? "&#x1F512;" : "&#x1F513;"}</button>
       <button class="remove" data-id="${shareId}" title="Remove">&#x2715;</button>
     </td>
@@ -523,8 +530,10 @@ async function startTransfer(msg) {
 
   dc.onerror = () => {
     if (!sent) {
-      updateStatus(shareId, "Error");
+      pc.close();
+      peerConnections.delete(key);
       decrementActive(shareId);
+      updateStatus(shareId, "Error");
     }
   };
 
