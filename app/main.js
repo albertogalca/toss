@@ -138,6 +138,11 @@ function startHttpServer() {
       }
 
       const shareId = decodeURIComponent(match[1]);
+      if (!/^[A-Za-z0-9_-]{10,24}$/.test(shareId)) {
+        res.writeHead(400, corsHeaders({ "Content-Type": "application/json" }));
+        res.end(JSON.stringify({ error: "invalid shareId" }));
+        return;
+      }
       const info = sharedFiles.get(shareId);
       if (!info) {
         res.writeHead(404, corsHeaders({ "Content-Type": "application/json" }));
@@ -145,12 +150,12 @@ function startHttpServer() {
         return;
       }
 
-      // Password check (timing-safe)
+      // Password check (timing-safe) — info.password is already a SHA-256 hex hash,
+      // and the receiver sends sha256(plaintext) as the token, so compare directly.
       if (info.password) {
         const token = url.searchParams.get("token") || "";
-        const expected = crypto.createHash("sha256").update(info.password).digest("hex");
         const tokenBuf = Buffer.from(token, "utf8");
-        const expectedBuf = Buffer.from(expected, "utf8");
+        const expectedBuf = Buffer.from(info.password, "utf8");
         if (tokenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(tokenBuf, expectedBuf)) {
           res.writeHead(403, corsHeaders({ "Content-Type": "application/json" }));
           res.end(JSON.stringify({ error: "invalid token" }));
@@ -216,7 +221,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false, // required for file.path on drag-and-drop
+      sandbox: true,
       preload: path.join(__dirname, "preload.js"),
     },
   });
@@ -331,12 +336,22 @@ function handleRelayMessage(msg) {
 // ---------------------------------------------------------------------------
 
 ipcMain.handle("add-file", (_event, filePath, password) => {
-  const shareId = crypto.randomBytes(12).toString("base64url"); // 16 chars, 96 bits
-  const fileName = path.basename(filePath);
-  const stat = fs.statSync(filePath);
-  const fileSize = stat.size;
+  const resolved = path.resolve(filePath);
+  if (!fs.existsSync(resolved)) {
+    throw new Error("File does not exist");
+  }
+  const realPath = fs.realpathSync(resolved);
+  const stat = fs.statSync(realPath);
+  if (!stat.isFile()) {
+    throw new Error("Not a regular file");
+  }
 
-  sharedFiles.set(shareId, { filePath, fileName, fileSize, password: password || null });
+  const shareId = crypto.randomBytes(12).toString("base64url"); // 16 chars, 96 bits
+  const fileName = path.basename(realPath);
+  const fileSize = stat.size;
+  const hashedPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
+
+  sharedFiles.set(shareId, { filePath: realPath, fileName, fileSize, password: hashedPassword });
   saveSharedFiles();
   registerWithRelay(shareId);
 
@@ -364,13 +379,13 @@ ipcMain.handle("get-files", () => {
 
 ipcMain.handle("get-file-password", (_event, shareId) => {
   const info = sharedFiles.get(shareId);
-  return info ? info.password : null;
+  return info ? !!info.password : false;
 });
 
 ipcMain.handle("set-file-password", (_event, shareId, password) => {
   const info = sharedFiles.get(shareId);
   if (info) {
-    info.password = password || null;
+    info.password = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
     saveSharedFiles();
     registerWithRelay(shareId);
   }
@@ -409,8 +424,9 @@ ipcMain.handle("read-file-chunk", (_event, shareId, offset, length) => {
 ipcMain.handle("verify-password", (_event, shareId, candidatePassword) => {
   const info = sharedFiles.get(shareId);
   if (!info || !info.password) return false;
+  const candidateHash = crypto.createHash("sha256").update(String(candidatePassword)).digest("hex");
   const expected = Buffer.from(info.password, "utf8");
-  const candidate = Buffer.from(String(candidatePassword), "utf8");
+  const candidate = Buffer.from(candidateHash, "utf8");
   if (expected.length !== candidate.length) return false;
   return crypto.timingSafeEqual(expected, candidate);
 });

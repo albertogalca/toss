@@ -251,9 +251,9 @@ async function addFileToUI({ shareId, fileName, fileSize, hasPassword }) {
   tr.querySelector(".pw-toggle").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     const id = btn.dataset.id;
-    const currentPassword = await window.toss.getFilePassword(id);
+    const hasPassword = await window.toss.getFilePassword(id);
 
-    if (currentPassword) {
+    if (hasPassword) {
       await window.toss.setFilePassword(id, null);
       btn.innerHTML = "&#x1F513;";
       const pwRow = document.getElementById(`pw-row-${id}`);
