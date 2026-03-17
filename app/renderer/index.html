@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src ws://localhost:3001 stun:stun.l.google.com:19302" />
+  <title>Toss</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Toss</h1>
+    <div id="connection-indicator">
+      <span id="status-dot"></span>
+      <span id="status-text">Disconnected</span>
+    </div>
+  </header>
+
+  <div id="drop-zone">
+    <p>Drop files here to share</p>
+  </div>
+
+  <ul id="file-list"></ul>
+
+  <script src="app.js"></script>
+</body>
+</html>

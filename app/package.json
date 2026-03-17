@@ -1,0 +1,13 @@
+{
+  "name": "toss-sender",
+  "version": "1.0.0",
+  "description": "Toss — peer-to-peer file sharing sender app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^35.0.0",
+    "ws": "^8.18.0"
+  }
+}

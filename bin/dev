@@ -1,0 +1,46 @@
+#!/bin/bash
+set -e
+
+cleanup() {
+  echo ""
+  echo "Shutting down..."
+  kill $RELAY_PID $RECEIVER_PID $ELECTRON_PID 2>/dev/null
+  wait $RELAY_PID $RECEIVER_PID $ELECTRON_PID 2>/dev/null
+  exit 0
+}
+
+trap cleanup INT TERM
+
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Kill stale processes on our ports
+lsof -ti :3001 | xargs kill -9 2>/dev/null || true
+lsof -ti :3002 | xargs kill -9 2>/dev/null || true
+
+# Relay
+cd "$DIR/relay"
+node index.js &
+RELAY_PID=$!
+
+# Receiver (static file server)
+cd "$DIR/receiver"
+npx -y serve -p 3002 -s &
+RECEIVER_PID=$!
+
+# Wait a beat for relay to start
+sleep 1
+
+# Electron app
+cd "$DIR/app"
+npx electron . &
+ELECTRON_PID=$!
+
+echo "──────────────────────────────"
+echo "  Relay:    ws://localhost:3001"
+echo "  Receiver: http://localhost:3002"
+echo "  Electron: running"
+echo "──────────────────────────────"
+echo "Press Ctrl+C to stop all"
+echo ""
+
+wait
