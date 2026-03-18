@@ -9,14 +9,18 @@ struct FileRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            HStack(spacing: 10) {
+                FilePreviewView(filePath: file.filePath, fileName: file.fileName)
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(file.fileName)
                         .font(.body)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(file.formattedSize)
-                        .font(.caption)
+                        .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
 

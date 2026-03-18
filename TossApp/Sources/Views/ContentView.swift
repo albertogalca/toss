@@ -45,7 +45,7 @@ struct ContentView: View {
                 Button {
                     NotificationCenter.default.post(name: .openSettings, object: nil)
                 } label: {
-                    Image(systemName: "gearshape")
+                    Image(systemName: "gearshape.fill")
                         .font(.callout)
                 }
                 .buttonStyle(.borderless)
@@ -76,6 +76,9 @@ struct ContentView: View {
         panel.allowsMultipleSelection = true
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
+        panel.resolvesAliases = true
+        panel.treatsFilePackagesAsDirectories = false
+        panel.allowedContentTypes = []
         guard panel.runModal() == .OK else { return }
         Task { @MainActor in
             await viewModel.addFiles(urls: panel.urls)
