@@ -4,8 +4,8 @@ set -e
 cleanup() {
   echo ""
   echo "Shutting down..."
-  kill $RELAY_PID $RECEIVER_PID $ELECTRON_PID 2>/dev/null
-  wait $RELAY_PID $RECEIVER_PID $ELECTRON_PID 2>/dev/null
+  kill $RELAY_PID $RECEIVER_PID $TOSS_PID 2>/dev/null
+  wait $RELAY_PID $RECEIVER_PID $TOSS_PID 2>/dev/null
   exit 0
 }
 
@@ -30,15 +30,16 @@ RECEIVER_PID=$!
 # Wait a beat for relay to start
 sleep 1
 
-# Electron app
-cd "$DIR/app"
-npx electron . &
-ELECTRON_PID=$!
+# Swift app
+cd "$DIR/TossApp"
+swift build 2>&1 | tail -5
+RELAY_URL=ws://localhost:3001 RECEIVER_URL=http://localhost:3002 swift run &
+TOSS_PID=$!
 
 echo "──────────────────────────────"
 echo "  Relay:    ws://localhost:3001"
 echo "  Receiver: http://localhost:3002"
-echo "  Electron: running"
+echo "  Toss:     running (menu bar)"
 echo "──────────────────────────────"
 echo "Press Ctrl+C to stop all"
 echo ""

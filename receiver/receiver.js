@@ -97,6 +97,7 @@
   // Streaming download state
   var fileWriter = null; // FileSystemWritableFileStream
   var useStreaming = false;
+  var dataChannel = null;
 
   function showError(message) {
     if (message) elErrorDetail.textContent = message;

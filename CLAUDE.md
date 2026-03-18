@@ -1,40 +1,52 @@
 # Toss — Peer-to-peer file sharing
 
 ## What it is
-Electron desktop app that shares files via a link. Receivers open the link in a browser.
-Primary transfer: HTTP direct download over LAN. Fallback: WebRTC via relay for WAN/NAT.
+Native macOS menu bar app (Swift/SwiftUI) that shares files via a link. Receivers open the link in a browser.
+Transfer: HTTP direct download over LAN via embedded SwiftNIO server.
 
 ## Architecture
 
 ```
-app/          — Electron sender app (main + renderer + preload)
-relay/        — Node.js WebSocket relay server (signaling + room management)
-receiver/     — Static site (vanilla JS) opened by the person downloading
-bin/dev       — Starts all three locally (relay :3001, receiver :3002, Electron)
+TossApp/              — Native Swift macOS sender app (menu bar + panel)
+relay/                — Node.js WebSocket relay server (signaling + room management)
+receiver/             — Static site (vanilla JS) opened by the person downloading
+bin/dev               — Starts all three locally (relay :3001, receiver :3002, Swift app)
 ```
 
 ### Transfer flow
-1. Sender drops file → Electron registers shareId with relay (WebSocket)
+1. Sender drops file → Swift app registers shareId with relay (WebSocket)
 2. Sender gets a link like `https://toss.example.com/#/<shareId>`
 3. Receiver opens link → connects to relay → gets file-info + HTTP endpoints
-4. Receiver tries HTTP direct download (LAN fast path) from sender's embedded HTTP server
-5. If HTTP fails (WAN/NAT), WebRTC data channel kicks in via relay signaling
-6. Password-protected files: SHA-256 token for HTTP, timing-safe IPC check for WebRTC
+4. Receiver downloads file via HTTP from sender's embedded SwiftNIO server
+5. Password-protected files: SHA-256 token for HTTP auth (timing-safe compare)
 
 ### Key decisions
-- **No build tools.** Vanilla JS everywhere — no bundler, no transpiler, no framework.
-- **No TLS in containers.** Coolify's reverse proxy (Traefik/Caddy) handles TLS termination.
-- **Password never leaves main process.** Renderer calls `verifyPassword` IPC, which uses `crypto.timingSafeEqual`.
-- **Config via env vars.** `RELAY_URL`, `RECEIVER_URL`, `ALLOWED_ORIGIN` for the Electron app. `PORT`, `ALLOWED_ORIGIN`, `TURN_SERVER`, `TURN_SECRET` for the relay.
+- **Native Swift.** SwiftUI + SwiftNIO, no Electron. Menu bar app with NSPanel.
+- **HTTP only.** No WebRTC — simpler, LAN-focused.
+- **No sandbox.** Unrestricted file access for drag-drop from Finder.
+- **macOS 14+.** Enables @Observable macro.
+- **No build tools for JS.** Vanilla JS in receiver — no bundler, no transpiler.
+- **No TLS in containers.** Coolify's reverse proxy handles TLS termination.
+- **Config via env vars.** `RELAY_URL`, `RECEIVER_URL`, `ALLOWED_ORIGIN` for the Swift app.
 
 ## File map
 
 | File | Role |
 |---|---|
-| `app/main.js` | Electron main process: HTTP file server, relay WS client, IPC handlers |
-| `app/preload.js` | Context bridge exposing IPC to renderer |
-| `app/renderer/app.js` | Sender UI: drag-drop, WebRTC peer connections, file streaming |
-| `app/renderer/index.html` | Sender HTML |
+| `TossApp/Package.swift` | SPM manifest: swift-nio dependency |
+| `TossApp/Sources/TossApp.swift` | @main App entry point |
+| `TossApp/Sources/AppDelegate.swift` | NSStatusItem + NSPanel setup |
+| `TossApp/Sources/Models/SharedFile.swift` | Codable model: shareId, filePath, fileName, fileSize, passwordHash |
+| `TossApp/Sources/Services/FileShareManager.swift` | Actor: CRUD shared files, JSON persistence, SHA-256 passwords |
+| `TossApp/Sources/Services/HTTPFileServer.swift` | Actor: SwiftNIO HTTP server, dynamic port, file streaming, CORS, auth |
+| `TossApp/Sources/Services/RelayClient.swift` | Actor: URLSessionWebSocketTask, register/unregister, reconnect |
+| `TossApp/Sources/Services/NetworkInfo.swift` | getifaddrs() → local IPv4 list for HTTP endpoints |
+| `TossApp/Sources/ViewModels/AppViewModel.swift` | @Observable, bridges services to SwiftUI views |
+| `TossApp/Sources/Views/ContentView.swift` | Main panel: file list + drop zone + status bar |
+| `TossApp/Sources/Views/FileRowView.swift` | Row: name, size, copy/lock/remove buttons |
+| `TossApp/Sources/Views/DropZoneView.swift` | Empty state drop target |
+| `TossApp/Sources/Utilities/MIMEType.swift` | Extension → MIME mapping |
+| `TossApp/Sources/Utilities/ShareId.swift` | ShareId format validation |
 | `relay/index.js` | Relay server: room management, rate limiting, signaling, ICE config |
 | `receiver/receiver.js` | Receiver logic: WS → HTTP download or WebRTC fallback |
 | `receiver/config.js` | Runtime config (gitignored) — sets `window.TOSS_RELAY_URL` |
@@ -46,9 +58,9 @@ bin/dev       — Starts all three locally (relay :3001, receiver :3002, Electro
 bin/dev
 ```
 
-Starts relay on ws://localhost:3001, receiver on http://localhost:3002, and the Electron app.
-No `npm install` needed for relay beyond the initial setup (`cd relay && npm install`).
-Electron app: `cd app && npm install`.
+Starts relay on ws://localhost:3001, receiver on http://localhost:3002, and the Swift menu bar app.
+First run: `cd relay && npm install` for relay dependencies.
+Swift app builds automatically via SPM (`swift build` / `swift run`).
 
 ## Deployment (Coolify on Hetzner)
 
@@ -66,10 +78,11 @@ Two services from the same repo:
 - Port: 80 (nginx)
 - Set `window.TOSS_RELAY_URL` in `config.js` to `wss://relay.toss.yourdomain.com`
 
-### Electron app
+### Swift app
 - Set env vars when building/distributing:
   - `RELAY_URL=wss://relay.toss.yourdomain.com`
   - `RECEIVER_URL=https://toss.yourdomain.com`
+  - `ALLOWED_ORIGIN=https://toss.yourdomain.com`
 
 ## Relay internals
 
@@ -81,22 +94,22 @@ Two services from the same repo:
 
 ## Conventions
 
-- No TypeScript, no JSX, no build step.
-- Use `var` in receiver (browser compat). Use `const`/`let` in Node and Electron renderer.
+- Swift app: Swift 5.10+, macOS 14+, @Observable, actors for services.
+- Use `var` in receiver (browser compat). Use `const`/`let` in Node.
 - IIFE wrapper in receiver.js for scope isolation.
-- IPC channel names are kebab-case: `read-file-chunk`, `verify-password`, etc.
 - CORS controlled via `ALLOWED_ORIGIN` env var (defaults to `*` for dev).
+- Persistence: `~/Library/Application Support/Toss/shared-files.json`
 
 ## Common tasks
 
-**Add a new IPC handler:**
-1. Add handler in `app/main.js` with `ipcMain.handle("name", ...)`
-2. Expose in `app/preload.js` via `contextBridge`
-3. Call from renderer as `window.toss.name(...)`
+**Add a new shared service:**
+1. Create actor in `TossApp/Sources/Services/`
+2. Wire it up in `AppViewModel.swift`
+3. Expose to views via @Observable properties
 
 **Change relay behavior:**
 Edit `relay/index.js`. The switch statement in the `ws.on("message")` handler routes all message types.
 
 **Test locally:**
-`bin/dev` → drop a file in the Electron app → open the share URL in a browser on the same machine.
+`bin/dev` → drop a file in the menu bar panel → open the share URL in a browser on the same machine.
 For WAN testing, use ngrok or similar to expose ports 3001 and 3002.

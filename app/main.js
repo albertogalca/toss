@@ -531,6 +531,9 @@ ipcMain.handle("set-preferences", (_event, prefs) => {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  if (process.platform === "darwin") {
+    app.dock.setIcon(path.join(__dirname, "icon-dock.png"));
+  }
   loadSharedFiles();
   createWindow();
   await startHttpServer();
