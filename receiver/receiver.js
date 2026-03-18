@@ -389,7 +389,14 @@
   }
 
   function handleAuth(channel) {
-    waitForPassword().then(function (pw) {
+    var pwPromise;
+    if (storedPassword !== null) {
+      pwPromise = Promise.resolve(storedPassword);
+      storedPassword = null;
+    } else {
+      pwPromise = waitForPassword();
+    }
+    pwPromise.then(function (pw) {
       if (channel.readyState === "open") {
         channel.send(JSON.stringify({ type: "auth", password: pw }));
       }
@@ -531,6 +538,7 @@
 
   var httpDownloadAttempted = false;
   var httpDownloadSucceeded = false;
+  var storedPassword = null;
 
   function attemptHttpDownload(httpEndpoints, hasPassword) {
     if (httpDownloadAttempted) return;
@@ -791,7 +799,6 @@
       if (msg.fileName) {
         elFileName.textContent = msg.fileName;
         elFileSize.textContent = formatBytes(msg.fileSize || 0);
-        showState(stateDownloading);
       }
       // Try HTTP direct download if endpoints available
       // Filter out plain-http endpoints when page is loaded over HTTPS (mixed content)
@@ -799,7 +806,17 @@
         return !(location.protocol === "https:" && ep.indexOf("http://") === 0);
       });
       if (endpoints.length > 0) {
+        if (msg.fileName) showState(stateDownloading);
         attemptHttpDownload(endpoints, msg.hasPassword);
+      } else if (msg.hasPassword) {
+        // No HTTP endpoints + password required: show prompt now,
+        // store password for WebRTC auth-required that comes later
+        waitForPassword().then(function (pw) {
+          storedPassword = pw;
+          showState(stateDownloading);
+        });
+      } else {
+        if (msg.fileName) showState(stateDownloading);
       }
     } else if (msg.type === "signal") {
       // If HTTP already succeeded, ignore WebRTC signaling
