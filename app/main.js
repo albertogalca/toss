@@ -260,13 +260,25 @@ function connectRelay() {
     } catch (_) { /* ignore malformed */ }
   });
 
-  ws.on("close", () => {
+  // Re-register all shares every 10 min (covers relay restarts between reconnects)
+  const reregisterInterval = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      for (const shareId of sharedFiles.keys()) {
+        registerWithRelay(shareId);
+      }
+    }
+  }, 10 * 60 * 1000);
+
+  ws.on("close", (code, reason) => {
+    clearInterval(reregisterInterval);
+    console.log(`[ws] closed — code: ${code}, reason: ${reason?.toString()}`);
     wsConnected = false;
     sendStatus();
     scheduleReconnect();
   });
 
-  ws.on("error", () => {
+  ws.on("error", (err) => {
+    console.error(`[ws] error:`, err.message || err);
     wsConnected = false;
     sendStatus();
     scheduleReconnect();

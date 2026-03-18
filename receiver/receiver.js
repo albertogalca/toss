@@ -699,8 +699,12 @@
         showState(stateDownloading);
       }
       // Try HTTP direct download if endpoints available
-      if (msg.httpEndpoints && msg.httpEndpoints.length > 0) {
-        attemptHttpDownload(msg.httpEndpoints, msg.hasPassword);
+      // Filter out plain-http endpoints when page is loaded over HTTPS (mixed content)
+      var endpoints = (msg.httpEndpoints || []).filter(function (ep) {
+        return !(location.protocol === "https:" && ep.indexOf("http://") === 0);
+      });
+      if (endpoints.length > 0) {
+        attemptHttpDownload(endpoints, msg.hasPassword);
       }
     } else if (msg.type === "signal") {
       // If HTTP already succeeded, ignore WebRTC signaling

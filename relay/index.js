@@ -67,9 +67,13 @@ setInterval(() => {
       ipState.delete(ip);
     }
   }
-  // Sweep rooms idle > ROOM_TTL_MS
+  // Sweep rooms idle > ROOM_TTL_MS (skip if sender is still connected)
   for (const [shareId, room] of rooms) {
     if (now - room.lastActivity > ROOM_TTL_MS) {
+      if (room.sender && room.sender.readyState === 1 /* WebSocket.OPEN */) {
+        room.lastActivity = now;
+        continue;
+      }
       for (const recipientWs of room.recipients.values()) {
         send(recipientWs, { type: "error", message: "room expired" });
       }
