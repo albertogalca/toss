@@ -26,12 +26,11 @@ struct FileRowView: View {
                 Button {
                     viewModel.copyLink(shareId: file.shareId)
                     copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                         copied = false
                     }
                 } label: {
                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                        .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.borderless)
                 .help("Copy share link")
