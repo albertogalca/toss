@@ -239,11 +239,10 @@
       }
 
       if (msg.type === "auth-failed") {
-        // Show error, let user retry
-        elPasswordError.classList.remove("hidden");
-        showState(statePassword);
-        // Re-trigger auth
+        storedPassword = null;
+        // Re-trigger auth (creates fresh prompt), then show error
         handleAuth(channel);
+        elPasswordError.classList.remove("hidden");
         return;
       }
 
@@ -389,14 +388,30 @@
   }
 
   function handleAuth(channel) {
-    var pwPromise;
+    // Password already collected before WebRTC connected
     if (storedPassword !== null) {
-      pwPromise = Promise.resolve(storedPassword);
+      var pw = storedPassword;
       storedPassword = null;
-    } else {
-      pwPromise = waitForPassword();
+      if (channel.readyState === "open") {
+        channel.send(JSON.stringify({ type: "auth", password: pw }));
+      }
+      return;
     }
-    pwPromise.then(function (pw) {
+
+    // Password prompt already visible — chain onto existing resolve
+    if (pendingAuthResolve) {
+      var origResolve = pendingAuthResolve;
+      pendingAuthResolve = function (pw) {
+        origResolve(pw);
+        if (channel.readyState === "open") {
+          channel.send(JSON.stringify({ type: "auth", password: pw }));
+        }
+      };
+      return;
+    }
+
+    // No prompt yet — show one
+    waitForPassword().then(function (pw) {
       if (channel.readyState === "open") {
         channel.send(JSON.stringify({ type: "auth", password: pw }));
       }
@@ -809,12 +824,17 @@
         if (msg.fileName) showState(stateDownloading);
         attemptHttpDownload(endpoints, msg.hasPassword);
       } else if (msg.hasPassword) {
-        // No HTTP endpoints + password required: show prompt now,
-        // store password for WebRTC auth-required that comes later
-        waitForPassword().then(function (pw) {
+        // No HTTP endpoints + password required: show prompt now.
+        // Don't use waitForPassword() — set up resolve manually so
+        // handleAuth can chain onto it without creating a competing prompt.
+        showState(statePassword);
+        elPasswordError.classList.add("hidden");
+        elPasswordInput.value = "";
+        elPasswordInput.focus();
+        pendingAuthResolve = function (pw) {
           storedPassword = pw;
           showState(stateDownloading);
-        });
+        };
       } else {
         if (msg.fileName) showState(stateDownloading);
       }
