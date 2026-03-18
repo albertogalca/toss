@@ -8,7 +8,6 @@ const WebSocket = require("ws");
 
 app.setName("Toss");
 
-// Use real IPs instead of mDNS .local hostnames for WebRTC ICE candidates
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
 
 const RELAY_URL = process.env.RELAY_URL || "ws://localhost:3001";
@@ -16,15 +15,19 @@ const RECEIVER_URL = process.env.RECEIVER_URL || "http://localhost:3002";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 
 function corsHeaders(extra) {
-  return Object.assign({ "Access-Control-Allow-Origin": ALLOWED_ORIGIN }, extra || {});
+  return Object.assign(
+    { "Access-Control-Allow-Origin": ALLOWED_ORIGIN },
+    extra || {},
+  );
 }
 
-// Shared files map: shareId -> { filePath, fileName, fileSize, password? }
 const sharedFiles = new Map();
-const SHARED_FILES_PATH = path.join(app.getPath("userData"), "shared-files.json");
+const SHARED_FILES_PATH = path.join(
+  app.getPath("userData"),
+  "shared-files.json",
+);
 const PREFERENCES_PATH = path.join(app.getPath("userData"), "preferences.json");
 
-// ICE servers fetched from relay
 let iceServers = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -58,7 +61,9 @@ function loadSharedFiles() {
         });
       }
     }
-  } catch (err) { console.error("Failed to load shared files:", err.message); }
+  } catch (err) {
+    console.error("Failed to load shared files:", err.message);
+  }
 }
 
 async function fetchIceConfig() {
@@ -71,7 +76,9 @@ async function fetchIceConfig() {
         iceServers = config.iceServers;
       }
     }
-  } catch (err) { console.error("Failed to fetch ICE config:", err.message); }
+  } catch (err) {
+    console.error("Failed to fetch ICE config:", err.message);
+  }
 }
 
 let mainWindow = null;
@@ -114,10 +121,13 @@ function startHttpServer() {
     httpServer = http.createServer((req, res) => {
       // CORS preflight
       if (req.method === "OPTIONS") {
-        res.writeHead(204, corsHeaders({
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
-          "Access-Control-Allow-Headers": "*",
-        }));
+        res.writeHead(
+          204,
+          corsHeaders({
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+          }),
+        );
         res.end();
         return;
       }
@@ -128,7 +138,6 @@ function startHttpServer() {
         return;
       }
 
-      // Parse URL: /download/:shareId?token=...
       const url = new URL(req.url, `http://localhost:${httpPort}`);
       const match = url.pathname.match(/^\/download\/(.+)$/);
       if (!match) {
@@ -156,8 +165,14 @@ function startHttpServer() {
         const token = url.searchParams.get("token") || "";
         const tokenBuf = Buffer.from(token, "utf8");
         const expectedBuf = Buffer.from(info.password, "utf8");
-        if (tokenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(tokenBuf, expectedBuf)) {
-          res.writeHead(403, corsHeaders({ "Content-Type": "application/json" }));
+        if (
+          tokenBuf.length !== expectedBuf.length ||
+          !crypto.timingSafeEqual(tokenBuf, expectedBuf)
+        ) {
+          res.writeHead(
+            403,
+            corsHeaders({ "Content-Type": "application/json" }),
+          );
           res.end(JSON.stringify({ error: "invalid token" }));
           return;
         }
@@ -172,12 +187,16 @@ function startHttpServer() {
 
       // Stream file
       const mimeType = guessMimeType(info.fileName);
-      res.writeHead(200, corsHeaders({
-        "Content-Type": mimeType,
-        "Content-Length": info.fileSize,
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(info.fileName)}"`,
-        "Access-Control-Expose-Headers": "Content-Length, Content-Disposition",
-      }));
+      res.writeHead(
+        200,
+        corsHeaders({
+          "Content-Type": mimeType,
+          "Content-Length": info.fileSize,
+          "Content-Disposition": `attachment; filename="${encodeURIComponent(info.fileName)}"`,
+          "Access-Control-Expose-Headers":
+            "Content-Length, Content-Disposition",
+        }),
+      );
 
       const stream = fs.createReadStream(info.filePath);
       stream.pipe(res);
@@ -197,13 +216,27 @@ function startHttpServer() {
 function guessMimeType(fileName) {
   const ext = (fileName.split(".").pop() || "").toLowerCase();
   const types = {
-    pdf: "application/pdf", zip: "application/zip", gz: "application/gzip",
-    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
-    webp: "image/webp", svg: "image/svg+xml",
-    mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
-    mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg",
-    txt: "text/plain", html: "text/html", css: "text/css", js: "text/javascript",
-    json: "application/json", xml: "application/xml",
+    pdf: "application/pdf",
+    zip: "application/zip",
+    gz: "application/gzip",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    txt: "text/plain",
+    html: "text/html",
+    css: "text/css",
+    js: "text/javascript",
+    json: "application/json",
+    xml: "application/xml",
   };
   return types[ext] || "application/octet-stream";
 }
@@ -239,7 +272,11 @@ function createWindow() {
 
 function connectRelay() {
   if (ws) {
-    try { ws.close(); } catch (_) { /* ignore */ }
+    try {
+      ws.close();
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   ws = new WebSocket(RELAY_URL);
@@ -257,17 +294,22 @@ function connectRelay() {
     try {
       const msg = JSON.parse(data);
       handleRelayMessage(msg);
-    } catch (_) { /* ignore malformed */ }
+    } catch (_) {
+      /* ignore malformed */
+    }
   });
 
   // Re-register all shares every 10 min (covers relay restarts between reconnects)
-  const reregisterInterval = setInterval(() => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      for (const shareId of sharedFiles.keys()) {
-        registerWithRelay(shareId);
+  const reregisterInterval = setInterval(
+    () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        for (const shareId of sharedFiles.keys()) {
+          registerWithRelay(shareId);
+        }
       }
-    }
-  }, 10 * 60 * 1000);
+    },
+    10 * 60 * 1000,
+  );
 
   ws.on("close", (code, reason) => {
     clearInterval(reregisterInterval);
@@ -361,9 +403,16 @@ ipcMain.handle("add-file", (_event, filePath, password) => {
   const shareId = crypto.randomBytes(12).toString("base64url"); // 16 chars, 96 bits
   const fileName = path.basename(realPath);
   const fileSize = stat.size;
-  const hashedPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
+  const hashedPassword = password
+    ? crypto.createHash("sha256").update(password).digest("hex")
+    : null;
 
-  sharedFiles.set(shareId, { filePath: realPath, fileName, fileSize, password: hashedPassword });
+  sharedFiles.set(shareId, {
+    filePath: realPath,
+    fileName,
+    fileSize,
+    password: hashedPassword,
+  });
   saveSharedFiles();
   registerWithRelay(shareId);
 
@@ -397,7 +446,9 @@ ipcMain.handle("get-file-password", (_event, shareId) => {
 ipcMain.handle("set-file-password", (_event, shareId, password) => {
   const info = sharedFiles.get(shareId);
   if (info) {
-    info.password = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
+    info.password = password
+      ? crypto.createHash("sha256").update(password).digest("hex")
+      : null;
     saveSharedFiles();
     registerWithRelay(shareId);
   }
@@ -436,7 +487,10 @@ ipcMain.handle("read-file-chunk", (_event, shareId, offset, length) => {
 ipcMain.handle("verify-password", (_event, shareId, candidatePassword) => {
   const info = sharedFiles.get(shareId);
   if (!info || !info.password) return false;
-  const candidateHash = crypto.createHash("sha256").update(String(candidatePassword)).digest("hex");
+  const candidateHash = crypto
+    .createHash("sha256")
+    .update(String(candidatePassword))
+    .digest("hex");
   const expected = Buffer.from(info.password, "utf8");
   const candidate = Buffer.from(candidateHash, "utf8");
   if (expected.length !== candidate.length) return false;
@@ -452,7 +506,9 @@ ipcMain.handle("get-preferences", () => {
     if (fs.existsSync(PREFERENCES_PATH)) {
       return JSON.parse(fs.readFileSync(PREFERENCES_PATH, "utf8"));
     }
-  } catch (_) { /* ignore */ }
+  } catch (_) {
+    /* ignore */
+  }
   return { theme: "dark" };
 });
 
@@ -462,7 +518,9 @@ ipcMain.handle("set-preferences", (_event, prefs) => {
     if (fs.existsSync(PREFERENCES_PATH)) {
       current = JSON.parse(fs.readFileSync(PREFERENCES_PATH, "utf8"));
     }
-  } catch (_) { /* ignore */ }
+  } catch (_) {
+    /* ignore */
+  }
   const merged = Object.assign(current, prefs);
   fs.writeFileSync(PREFERENCES_PATH, JSON.stringify(merged), "utf8");
   return merged;
@@ -491,9 +549,17 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   if (ws) {
-    try { ws.close(); } catch (_) { /* ignore */ }
+    try {
+      ws.close();
+    } catch (_) {
+      /* ignore */
+    }
   }
   if (httpServer) {
-    try { httpServer.close(); } catch (_) { /* ignore */ }
+    try {
+      httpServer.close();
+    } catch (_) {
+      /* ignore */
+    }
   }
 });

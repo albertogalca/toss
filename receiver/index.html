@@ -1,67 +1,81 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Toss — Receive File</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src ws: wss: http: https:; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:;">
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <div class="brand">Toss</div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Toss — Receive File</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src ws: wss: http: https:; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:;"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="brand">Toss</div>
 
-  <div class="card">
-    <!-- Connecting -->
-    <div id="state-connecting" class="state">
-      <div class="spinner"></div>
-      <p class="status">Looking for sender...</p>
-    </div>
-
-    <!-- Sender not found -->
-    <div id="state-not-found" class="state hidden">
-      <p class="status">This link is no longer active.</p>
-      <p class="detail">The sender may have closed the app or removed the file.</p>
-    </div>
-
-    <!-- Password required -->
-    <div id="state-password" class="state hidden">
-      <p class="status">This file is password-protected.</p>
-      <div class="password-form">
-        <input type="password" id="password-input" placeholder="Enter password" autocomplete="off">
-        <button id="password-submit" class="download-btn">Submit</button>
+    <div class="card">
+      <!-- Connecting -->
+      <div id="state-connecting" class="state">
+        <div class="spinner"></div>
+        <p class="status">Looking for sender...</p>
       </div>
-      <p class="detail password-error hidden" id="password-error">Incorrect password. Try again.</p>
-    </div>
 
-    <!-- Downloading -->
-    <div id="state-downloading" class="state hidden">
-      <p class="file-name" id="file-name"></p>
-      <p class="file-size" id="file-size"></p>
-      <div class="progress-bar-track">
-        <div class="progress-bar-fill" id="progress-fill"></div>
+      <!-- Sender not found -->
+      <div id="state-not-found" class="state hidden">
+        <p class="status">This link is no longer active.</p>
+        <p class="detail">
+          The sender may have closed the app or removed the file.
+        </p>
       </div>
-      <div class="progress-info">
-        <span id="progress-percent">0%</span>
-        <span id="transfer-speed"></span>
+
+      <!-- Password required -->
+      <div id="state-password" class="state hidden">
+        <p class="status">This file is password-protected.</p>
+        <div class="password-form">
+          <input
+            type="password"
+            id="password-input"
+            placeholder="Enter password"
+            autocomplete="off"
+          />
+          <button id="password-submit" class="download-btn">Submit</button>
+        </div>
+        <p class="detail password-error hidden" id="password-error">
+          Incorrect password. Try again.
+        </p>
+      </div>
+
+      <!-- Downloading -->
+      <div id="state-downloading" class="state hidden">
+        <p class="file-name" id="file-name"></p>
+        <p class="file-size" id="file-size"></p>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+        <div class="progress-info">
+          <span id="progress-percent">0%</span>
+          <span id="transfer-speed"></span>
+        </div>
+      </div>
+
+      <!-- Complete -->
+      <div id="state-complete" class="state hidden">
+        <div id="preview-container"></div>
+        <p class="file-name" id="complete-file-name"></p>
+        <p class="file-size" id="complete-file-size"></p>
+        <button id="download-btn" class="download-btn">Download</button>
+      </div>
+
+      <!-- Error -->
+      <div id="state-error" class="state hidden">
+        <p class="status">Transfer failed.</p>
+        <p class="detail" id="error-detail">
+          The sender may have gone offline.
+        </p>
       </div>
     </div>
 
-    <!-- Complete -->
-    <div id="state-complete" class="state hidden">
-      <div id="preview-container"></div>
-      <p class="file-name" id="complete-file-name"></p>
-      <p class="file-size" id="complete-file-size"></p>
-      <button id="download-btn" class="download-btn">Download</button>
-    </div>
-
-    <!-- Error -->
-    <div id="state-error" class="state hidden">
-      <p class="status">Transfer failed.</p>
-      <p class="detail" id="error-detail">The sender may have gone offline.</p>
-    </div>
-  </div>
-
-  <script src="config.js"></script>
-  <script src="receiver.js"></script>
-</body>
+    <script src="config.js"></script>
+    <script src="receiver.js"></script>
+  </body>
 </html>

@@ -18,11 +18,8 @@ const MAX_IP_ENTRIES = 50000;
 const ROOM_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const SHARE_ID_RE = /^[A-Za-z0-9_-]{10,24}$/;
 
-// shareId -> { sender: ws, recipients: Map<sessionId, ws>, lastActivity }
 const rooms = new Map();
-// ws -> Set<shareId>  (tracks all shareIds registered by a sender)
 const senderShareIds = new Map();
-// ws -> [{shareId, sessionId}]  (tracks rooms a recipient joined, for fast cleanup)
 const recipientRooms = new Map();
 
 // ---------------------------------------------------------------------------
@@ -33,14 +30,17 @@ const RATE_LIMIT_PER_SEC = 50;
 const RATE_LIMIT_BUCKET = 100;
 const MAX_CONNECTIONS_PER_IP = 20;
 
-// ip -> { tokens, lastRefill, connections }
 const ipState = new Map();
 
 function getIpState(ip) {
   let state = ipState.get(ip);
   if (!state) {
     if (ipState.size >= MAX_IP_ENTRIES) return null;
-    state = { tokens: RATE_LIMIT_BUCKET, lastRefill: Date.now(), connections: 0 };
+    state = {
+      tokens: RATE_LIMIT_BUCKET,
+      lastRefill: Date.now(),
+      connections: 0,
+    };
     ipState.set(ip, state);
   }
   return state;
@@ -51,7 +51,10 @@ function consumeToken(ip) {
   if (!state) return false;
   const now = Date.now();
   const elapsed = (now - state.lastRefill) / 1000;
-  state.tokens = Math.min(RATE_LIMIT_BUCKET, state.tokens + elapsed * RATE_LIMIT_PER_SEC);
+  state.tokens = Math.min(
+    RATE_LIMIT_BUCKET,
+    state.tokens + elapsed * RATE_LIMIT_PER_SEC,
+  );
   state.lastRefill = now;
 
   if (state.tokens < 1) return false;
@@ -59,7 +62,6 @@ function consumeToken(ip) {
   return true;
 }
 
-// Prune stale IP entries and idle rooms every 60s
 setInterval(() => {
   const now = Date.now();
   for (const [ip, state] of ipState) {
@@ -67,10 +69,9 @@ setInterval(() => {
       ipState.delete(ip);
     }
   }
-  // Sweep rooms idle > ROOM_TTL_MS (skip if sender is still connected)
   for (const [shareId, room] of rooms) {
     if (now - room.lastActivity > ROOM_TTL_MS) {
-      if (room.sender && room.sender.readyState === 1 /* WebSocket.OPEN */) {
+      if (room.sender && room.sender.readyState === 1) {
         room.lastActivity = now;
         continue;
       }
@@ -112,12 +113,14 @@ function handleRequest(req, res) {
     let activeConnections = 0;
     if (wss) activeConnections = wss.clients.size;
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      activeConnections,
-      activeRooms: rooms.size,
-      uptime: process.uptime(),
-      memoryUsage: process.memoryUsage(),
-    }));
+    res.end(
+      JSON.stringify({
+        activeConnections,
+        activeRooms: rooms.size,
+        uptime: process.uptime(),
+        memoryUsage: process.memoryUsage(),
+      }),
+    );
     return;
   }
 
@@ -140,7 +143,10 @@ function handleRequest(req, res) {
       });
     }
 
-    res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": ALLOWED_ORIGIN });
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    });
     res.end(JSON.stringify({ iceServers }));
     return;
   }
@@ -151,10 +157,13 @@ function handleRequest(req, res) {
 
 let server;
 if (TLS_CERT && TLS_KEY) {
-  server = https.createServer({
-    cert: fs.readFileSync(TLS_CERT),
-    key: fs.readFileSync(TLS_KEY),
-  }, handleRequest);
+  server = https.createServer(
+    {
+      cert: fs.readFileSync(TLS_CERT),
+      key: fs.readFileSync(TLS_KEY),
+    },
+    handleRequest,
+  );
 } else {
   server = http.createServer(handleRequest);
 }
@@ -166,7 +175,9 @@ if (TLS_CERT && TLS_KEY) {
 const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 
 wss.on("connection", (ws, req) => {
-  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
+  const ip =
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    req.socket.remoteAddress;
   const state = getIpState(ip);
 
   if (!state) {
@@ -174,17 +185,17 @@ wss.on("connection", (ws, req) => {
     return;
   }
 
-  // Connection limit per IP
   if (state.connections >= MAX_CONNECTIONS_PER_IP) {
     ws.close(4429, "too many connections");
     return;
   }
   state.connections += 1;
 
-  console.log(`[connect] client connected from ${ip} (total: ${wss.clients.size})`);
+  console.log(
+    `[connect] client connected from ${ip} (total: ${wss.clients.size})`,
+  );
 
   ws.on("message", (raw) => {
-    // Rate limit per message
     if (!consumeToken(ip)) {
       return send(ws, { type: "error", message: "rate limit exceeded" });
     }
@@ -219,7 +230,9 @@ wss.on("connection", (ws, req) => {
         if (!senderShareIds.has(ws)) senderShareIds.set(ws, new Set());
         senderShareIds.get(ws).add(shareId);
 
-        console.log(`[register] shareId=${shareId} httpEndpoints=${(msg.httpEndpoints || []).length}`);
+        console.log(
+          `[register] shareId=${shareId} httpEndpoints=${(msg.httpEndpoints || []).length}`,
+        );
         break;
       }
 
@@ -228,9 +241,11 @@ wss.on("connection", (ws, req) => {
 
         const room = rooms.get(shareId);
         if (room && room.sender === ws) {
-          // Notify all recipients
           for (const recipientWs of room.recipients.values()) {
-            send(recipientWs, { type: "error", message: "sender unregistered" });
+            send(recipientWs, {
+              type: "error",
+              message: "sender unregistered",
+            });
           }
           rooms.delete(shareId);
           const ids = senderShareIds.get(ws);
@@ -244,7 +259,8 @@ wss.on("connection", (ws, req) => {
       case "request": {
         if (!validateShareId(ws, shareId)) return;
         const sessionId = msg.sessionId;
-        if (!sessionId) return send(ws, { type: "error", message: "missing sessionId" });
+        if (!sessionId)
+          return send(ws, { type: "error", message: "missing sessionId" });
 
         const room = rooms.get(shareId);
         if (!room) {
@@ -260,9 +276,7 @@ wss.on("connection", (ws, req) => {
         room.recipients.set(sessionId, ws);
         if (!recipientRooms.has(ws)) recipientRooms.set(ws, []);
         recipientRooms.get(ws).push({ shareId, sessionId });
-        // Let sender know a recipient connected
         send(room.sender, { type: "recipient-ready", shareId, sessionId });
-        // Send file info + HTTP endpoints to recipient
         send(ws, {
           type: "file-info",
           shareId,
@@ -271,14 +285,17 @@ wss.on("connection", (ws, req) => {
           hasPassword: room.hasPassword,
           httpEndpoints: room.httpEndpoints || [],
         });
-        console.log(`[request] recipient joined shareId=${shareId} sessionId=${sessionId}`);
+        console.log(
+          `[request] recipient joined shareId=${shareId} sessionId=${sessionId}`,
+        );
         break;
       }
 
       case "signal": {
         if (!validateShareId(ws, shareId)) return;
         const sessionId = msg.sessionId;
-        if (!sessionId) return send(ws, { type: "error", message: "missing sessionId" });
+        if (!sessionId)
+          return send(ws, { type: "error", message: "missing sessionId" });
 
         const room = rooms.get(shareId);
         if (!room) {
@@ -287,7 +304,6 @@ wss.on("connection", (ws, req) => {
 
         room.lastActivity = Date.now();
 
-        // Forward to the other party, routing by sessionId
         if (ws === room.sender) {
           const recipient = room.recipients.get(sessionId);
           if (recipient) {
@@ -296,7 +312,6 @@ wss.on("connection", (ws, req) => {
             send(ws, { type: "error", message: "no peer connected" });
           }
         } else {
-          // recipient -> sender
           send(room.sender, { type: "signal", shareId, sessionId, data });
         }
         break;
@@ -309,16 +324,20 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     state.connections = Math.max(0, state.connections - 1);
-    console.log(`[disconnect] client disconnected (total: ${wss.clients.size})`);
+    console.log(
+      `[disconnect] client disconnected (total: ${wss.clients.size})`,
+    );
 
-    // If this was a sender, clean up all its shareIds
     const ids = senderShareIds.get(ws);
     if (ids) {
       for (const shareId of ids) {
         const room = rooms.get(shareId);
         if (room) {
           for (const recipientWs of room.recipients.values()) {
-            send(recipientWs, { type: "error", message: "sender disconnected" });
+            send(recipientWs, {
+              type: "error",
+              message: "sender disconnected",
+            });
           }
           rooms.delete(shareId);
         }
@@ -326,14 +345,15 @@ wss.on("connection", (ws, req) => {
       senderShareIds.delete(ws);
     }
 
-    // If this was a recipient in any room, remove it via reverse map
     const entries = recipientRooms.get(ws);
     if (entries) {
       for (const { shareId, sessionId } of entries) {
         const room = rooms.get(shareId);
         if (room) {
           room.recipients.delete(sessionId);
-          console.log(`[cleanup] recipient left shareId=${shareId} sessionId=${sessionId}`);
+          console.log(
+            `[cleanup] recipient left shareId=${shareId} sessionId=${sessionId}`,
+          );
         }
       }
       recipientRooms.delete(ws);
@@ -356,6 +376,6 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 server.listen(PORT, () => {
-  const proto = (TLS_CERT && TLS_KEY) ? "wss" : "ws";
+  const proto = TLS_CERT && TLS_KEY ? "wss" : "ws";
   console.log(`toss relay listening on port ${PORT} (${proto})`);
 });

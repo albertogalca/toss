@@ -11,16 +11,12 @@ const settingsBtn = document.getElementById("settings-btn");
 const settingsPopover = document.getElementById("settings-popover");
 const themeToggle = document.getElementById("theme-toggle");
 
-// Active peer connections keyed by a unique session key (shareId + recipient)
 const peerConnections = new Map();
 
-// Concurrent download cap per shareId
 const MAX_CONCURRENT = 5;
-const activeTransfers = new Map(); // shareId -> count
-const transferQueue = new Map();   // shareId -> [{ msg }]
+const activeTransfers = new Map();
+const transferQueue = new Map();
 
-
-// ICE servers (fetched from main process)
 let iceServers = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -30,7 +26,9 @@ let iceServers = [
   try {
     const servers = await window.toss.getIceServers();
     if (servers && servers.length > 0) iceServers = servers;
-  } catch (_) { /* use defaults */ }
+  } catch (_) {
+    /* use defaults */
+  }
 })();
 
 // ---------------------------------------------------------------------------
@@ -78,17 +76,28 @@ function humanSize(bytes) {
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const val = bytes / Math.pow(1024, i);
+  const val = bytes / 1024 ** i;
   return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
 function getMimeType(fileName) {
   const ext = fileName.split(".").pop().toLowerCase();
   const map = {
-    txt: "text/plain", html: "text/html", css: "text/css", js: "application/javascript",
-    json: "application/json", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-    gif: "image/gif", svg: "image/svg+xml", pdf: "application/pdf",
-    zip: "application/zip", mp4: "video/mp4", mp3: "audio/mpeg", wav: "audio/wav",
+    txt: "text/plain",
+    html: "text/html",
+    css: "text/css",
+    js: "application/javascript",
+    json: "application/json",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    svg: "image/svg+xml",
+    pdf: "application/pdf",
+    zip: "application/zip",
+    mp4: "video/mp4",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
   };
   return map[ext] || "application/octet-stream";
 }
@@ -164,7 +173,6 @@ function getFileRows() {
 
 async function removeRow(tr) {
   const id = tr.id.replace("file-", "");
-  // Select neighbor before removing
   const rows = getFileRows();
   const idx = rows.indexOf(tr);
   const next = rows[idx + 1] || rows[idx - 1];
@@ -180,7 +188,6 @@ async function removeRow(tr) {
 }
 
 document.addEventListener("keydown", (e) => {
-  // Don't intercept when typing in an input
   if (e.target.tagName === "INPUT") return;
 
   const selected = getSelectedRow();
@@ -189,12 +196,18 @@ document.addEventListener("keydown", (e) => {
 
   if (e.key === "ArrowDown") {
     e.preventDefault();
-    if (!selected) { selectRow(rows[0]); return; }
+    if (!selected) {
+      selectRow(rows[0]);
+      return;
+    }
     const idx = rows.indexOf(selected);
     if (idx < rows.length - 1) selectRow(rows[idx + 1]);
   } else if (e.key === "ArrowUp") {
     e.preventDefault();
-    if (!selected) { selectRow(rows[rows.length - 1]); return; }
+    if (!selected) {
+      selectRow(rows[rows.length - 1]);
+      return;
+    }
     const idx = rows.indexOf(selected);
     if (idx > 0) selectRow(rows[idx - 1]);
   } else if ((e.key === "Backspace" || e.key === "Delete") && selected) {
@@ -235,19 +248,18 @@ async function addFileToUI({ shareId, fileName, fileSize, hasPassword }) {
     </td>
   `;
 
-  // Click to select row
   tr.addEventListener("click", () => selectRow(tr));
 
-  // Copy link
   tr.querySelector(".copy").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     await navigator.clipboard.writeText(btn.dataset.url);
     const orig = btn.innerHTML;
     btn.textContent = "\u2713";
-    setTimeout(() => { btn.innerHTML = orig; }, 1500);
+    setTimeout(() => {
+      btn.innerHTML = orig;
+    }, 1500);
   });
 
-  // Password toggle
   tr.querySelector(".pw-toggle").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     const id = btn.dataset.id;
@@ -260,7 +272,10 @@ async function addFileToUI({ shareId, fileName, fileSize, hasPassword }) {
       if (pwRow) pwRow.remove();
     } else {
       let pwRow = document.getElementById(`pw-row-${id}`);
-      if (pwRow) { pwRow.querySelector("input").focus(); return; }
+      if (pwRow) {
+        pwRow.querySelector("input").focus();
+        return;
+      }
 
       pwRow = document.createElement("tr");
       pwRow.className = "password-row-tr";
@@ -289,7 +304,9 @@ async function addFileToUI({ shareId, fileName, fileSize, hasPassword }) {
       };
 
       pwRow.querySelector(".pw-save").addEventListener("click", save);
-      pwRow.querySelector(".pw-cancel").addEventListener("click", () => pwRow.remove());
+      pwRow
+        .querySelector(".pw-cancel")
+        .addEventListener("click", () => pwRow.remove());
       input.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter") save();
         if (ev.key === "Escape") pwRow.remove();
@@ -297,7 +314,6 @@ async function addFileToUI({ shareId, fileName, fileSize, hasPassword }) {
     }
   });
 
-  // Remove
   tr.querySelector(".remove").addEventListener("click", () => removeRow(tr));
 
   fileList.appendChild(tr);
@@ -336,7 +352,6 @@ function decrementActive(shareId) {
   if (count === 0) activeTransfers.delete(shareId);
   else activeTransfers.set(shareId, count);
 
-  // Dequeue next waiting request
   const queue = transferQueue.get(shareId);
   if (queue && queue.length > 0) {
     const next = queue.shift();
@@ -369,9 +384,17 @@ window.toss.onIncomingRequest(async (msg) => {
   } else if (msg.type === "signal") {
     const data = msg.data;
     if (data.type === "answer") {
-      handleAnswer({ shareId: msg.shareId, sessionId: msg.sessionId, sdp: data.sdp });
+      handleAnswer({
+        shareId: msg.shareId,
+        sessionId: msg.sessionId,
+        sdp: data.sdp,
+      });
     } else if (data.type === "ice-candidate") {
-      handleRemoteICE({ shareId: msg.shareId, sessionId: msg.sessionId, candidate: data.candidate });
+      handleRemoteICE({
+        shareId: msg.shareId,
+        sessionId: msg.sessionId,
+        candidate: data.candidate,
+      });
     }
   }
 });
@@ -382,7 +405,6 @@ async function startTransfer(msg) {
 
   incrementActive(shareId);
 
-  // Fetch file info
   const files = await window.toss.getFiles();
   const fileInfo = files.find((f) => f.shareId === shareId);
   if (!fileInfo) {
@@ -397,7 +419,6 @@ async function startTransfer(msg) {
 
   peerConnections.set(key, pc);
 
-  // ICE candidates -> relay (extract plain object — RTCIceCandidate doesn't survive IPC)
   pc.onicecandidate = (e) => {
     if (e.candidate) {
       window.toss.sendSignal(shareId, sessionId, {
@@ -407,7 +428,6 @@ async function startTransfer(msg) {
     }
   };
 
-  // Create data channel
   const dc = pc.createDataChannel("file", {
     ordered: true,
   });
@@ -417,23 +437,24 @@ async function startTransfer(msg) {
   let sent = false;
 
   dc.onopen = async () => {
-    // Check if file has a password — if so, do auth handshake first
     const files = await window.toss.getFiles();
     const hasPassword = files.find((f) => f.shareId === shareId)?.hasPassword;
     if (hasPassword) {
       dc.send(JSON.stringify({ type: "auth-required" }));
-      // Wait for correct password, allowing retries
       const authOk = await new Promise((resolve) => {
         const maxAttempts = 5;
         let attempts = 0;
-        const timeout = setTimeout(() => resolve(false), 120000); // 2 min total
+        const timeout = setTimeout(() => resolve(false), 120000);
         dc.onmessage = async (event) => {
           if (typeof event.data !== "string") return;
           try {
             const authMsg = JSON.parse(event.data);
             if (authMsg.type === "auth") {
               attempts++;
-              const match = await window.toss.verifyPassword(shareId, authMsg.password);
+              const match = await window.toss.verifyPassword(
+                shareId,
+                authMsg.password,
+              );
               if (match) {
                 dc.send(JSON.stringify({ type: "auth-ok" }));
                 clearTimeout(timeout);
@@ -444,10 +465,9 @@ async function startTransfer(msg) {
                 resolve(false);
               } else {
                 dc.send(JSON.stringify({ type: "auth-failed" }));
-                // Keep listening for next attempt
               }
             }
-          } catch (_) { /* ignore */ }
+          } catch (_) {}
         };
       });
       if (!authOk || dc.readyState !== "open") {
@@ -462,23 +482,21 @@ async function startTransfer(msg) {
 
     updateStatus(shareId, "Sending...");
 
-    // Send metadata
-    dc.send(JSON.stringify({
-      type: "metadata",
-      fileName: fileInfo.fileName,
-      fileSize: fileInfo.fileSize,
-      mimeType: getMimeType(fileInfo.fileName),
-    }));
+    dc.send(
+      JSON.stringify({
+        type: "metadata",
+        fileName: fileInfo.fileName,
+        fileSize: fileInfo.fileSize,
+        mimeType: getMimeType(fileInfo.fileName),
+      }),
+    );
 
-    // Stream file in chunks
     let offset = 0;
     const total = fileInfo.fileSize;
 
     while (offset < total) {
-      // Receiver may have closed the channel (e.g. HTTP download succeeded)
       if (dc.readyState !== "open") break;
 
-      // Back-pressure: wait if buffer is too full
       if (dc.bufferedAmount > HIGH_WATER) {
         await waitForDrain(dc);
         if (dc.readyState !== "open") break;
@@ -491,11 +509,10 @@ async function startTransfer(msg) {
       try {
         dc.send(chunk);
       } catch (_) {
-        break; // channel closed mid-send
+        break;
       }
       offset += chunk.byteLength;
 
-      // Update progress
       const pct = Math.round((offset / total) * 100);
       const bar = document.getElementById(`progress-${shareId}`);
       const status = document.getElementById(`status-${shareId}`);
@@ -507,7 +524,6 @@ async function startTransfer(msg) {
     }
 
     if (dc.readyState !== "open") {
-      // Receiver closed channel — likely used HTTP instead
       pc.close();
       peerConnections.delete(key);
       decrementActive(shareId);
@@ -515,12 +531,10 @@ async function startTransfer(msg) {
       return;
     }
 
-    // Signal done
     dc.send(JSON.stringify({ type: "done" }));
     sent = true;
     updateStatus(shareId, "Sent");
 
-    // Clean up after a short delay
     setTimeout(() => {
       pc.close();
       peerConnections.delete(key);
@@ -537,11 +551,9 @@ async function startTransfer(msg) {
     }
   };
 
-  // Create offer
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
-  // Extract plain object — RTCSessionDescription doesn't survive IPC structured clone
   window.toss.sendSignal(shareId, sessionId, {
     type: "offer",
     sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp },
@@ -561,9 +573,7 @@ async function handleRemoteICE(msg) {
 
   try {
     await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-  } catch (_) {
-    // ignore ICE errors
-  }
+  } catch (_) {}
 }
 
 function waitForDrain(dc) {
